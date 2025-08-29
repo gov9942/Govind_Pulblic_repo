@@ -1,0 +1,89 @@
+parameters:
+- name: solutionfilepath
+  type: string
+ # default: '$(extsolutionname)_$(versionnumber).zip'
+- name: connectionname
+  type: string
+- name: connectionid
+  type: string
+- name: artifactname
+  type: string
+- name: settingsRepopath
+  type: string
+
+steps:
+- task: microsoft-IsvExpTools.PowerPlatform-BuildTools.tool-installer.PowerPlatformToolInstaller@2
+  displayName: 'Power Platform Tool Installer '
+- task: PowerShell@2
+  enabled: true
+  displayName: 'Settings Generates'
+  continueOnError: true
+  inputs:
+    targetType: 'inline'
+    script: |
+        
+        Write-Host "Environment - ${{ parameters.connectionname }} "
+        Write-Host "##vso[task.setvariable variable=conn;]${{ parameters.connectionname }}"
+        echo "##vso[task.setvariable variable=conn]${{ parameters.connectionname }}"
+        $connection = "${{ parameters.connectionname }}" -Split "-"
+        Write-Host "##vso[task.setvariable variable=folder;]($connection[0]+"-"+$connection[1])"   
+        $folder = ($connection[0]+"-"+$connection[1])
+        echo "##vso[task.setvariable variable=folder]$folder"
+        Write-Host "Folder - $folder "
+
+        If (!(Test-Path $(Build.ArtifactStagingDirectory)\$folder)) 
+        {
+          MD $(Build.ArtifactStagingDirectory)\$folder
+        }
+
+        If (!(Test-Path $(settingsRepopath)\$folder)) 
+        {
+          MD $(settingsRepopath)\$folder
+        }
+        #Get-ChildItem -Path $(Build.ArtifactStagingDirectory) -Recurse -Force
+        #Copy-Item '$(System.DefaultWorkingDirectory)/D365/CE/Solutions/packed/OPGTSalesExtensionSolution_1.0.2.174.zip' '$(Build.ArtifactStagingDirectory)\$(artifactname)\$(folder)\OPGTSalesExtensionSolution_1.0.2.174.zip'
+        #Copy-Item '$(System.DefaultWorkingDirectory)/D365/CE/Solutions/packed/OPGTSalesExtensionSolution_1.0.2.174.zip' '$(Build.ArtifactStagingDirectory)\$(solutionname)_$(versionnumber).zip'
+        $settingsRepopath= "$(settingsRepopath)\$folder"
+        
+        $pacNugetFolder = Get-ChildItem "pac" | Where-Object {$_.Name -match "Microsoft.PowerApps.CLI."}
+        $pacPath = $pacNugetFolder.FullName + "\tools"
+        echo "##vso[task.setvariable variable=pacPath]$pacPath"
+        $env:PATH = $env:PATH + ";" + $pacPath
+
+        if ($(solutionfilepath) -eq $null )
+        {
+          $solutionpath = '$(Build.ArtifactStagingDirectory)\$(solutionname)_$(versionnumber).zip'
+        }
+        $solutionpath = "$(solutionfilepath)"
+        Write-Host  "Solution File Path :- $solutionpath"
+        Write-Host "Settings Repo Path - $settingsRepopath"
+        
+        pac solution create-settings --solution-zip $solutionpath --settings-file deploymentsettings.json
+
+        Write-Host  "Pac File Generate Done :-"
+        
+        $DeploymentSettingsFile= '.\deploymentsettings.json'
+
+        $DataverseConnectorId = "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+        $DataverseConnectionID =  "${{ parameters.connectionid }}"   
+        $DataverseConnectionID = $DataverseConnectionID.trim()    
+       
+        Write-Host "DataverseConnectionID Trim - $DataverseConnectionID"
+       
+        $json = Get-Content $DeploymentSettingsFile -raw | ConvertFrom-Json
+        Write-Host  "Existing Json :- $json"
+        Echo $json
+        $json.ConnectionReferences | % {if($_.ConnectorId -eq $DataverseConnectorId){$_.ConnectionId=$DataverseConnectionID}}
+        $json | ConvertTo-Json -depth 32| set-content $DeploymentSettingsFile
+        Write-Host  "Updated Json :- $json"
+        Echo $json
+        Copy-Item '$(System.DefaultWorkingDirectory)\deploymentsettings.json' "$(Build.ArtifactStagingDirectory)\$folder"
+        Copy-Item '$(System.DefaultWorkingDirectory)\deploymentsettings.json' "$settingsRepopath"
+        Write-Host  "Copied DEV"
+        Clear-Variable folder -Scope Global
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: '$(artifactname)'
+    publishLocation: Container

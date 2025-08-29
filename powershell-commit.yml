@@ -1,0 +1,29 @@
+parameters:
+- name: reponame
+- name: repobranch
+- name: repopath
+- name: commitmessage
+
+steps:
+- powershell: |
+   # Write your PowerShell commands here.   
+   git init
+   git config user.email $(gitemail)
+   git config user.name $(gitusername)
+   git remote set-url --push origin 
+https://$(gitusername):$(gitpassword)@dev.azure.com/gocloudclient0563/OPGT%20IT%20Modernization/_git/${{ parameters.reponame }}
+https://CatholichealthcareLtd@dev.azure.com/CatholichealthcareLtd/D365%20EAM/_git/D365%20EAM
+   git status
+   git add ${{ parameters.repopath }}/* .
+   git stash
+   Write-Host "Status"
+   git status
+   git pull origin ${{ parameters.repobranch }}
+   git stash pop
+   git add ${{ parameters.repopath }}/* .
+   git commit -m "${{ parameters.commitmessage }}" 
+   Write-Host "Commit Done"
+   git push -u origin ${{ parameters.repobranch }}  
+   
+  displayName: 'Repo Update - PowerShell Script'
+  continueOnError: true

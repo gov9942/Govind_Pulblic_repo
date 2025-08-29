@@ -1,0 +1,44 @@
+name: "$(unmanaged_releasenumber)$(Rev:r)"
+trigger: 
+- none
+pool:
+  name: 'IST-CE-DEV-QA'
+  vmimage: 'windows-latest'
+
+variables:
+- group: OPGT
+- name: srcenv
+  value: 'D365-Jts-Dev2'
+- name: destenv
+  value: 'D365-Jts-DevQa'
+- name: PowerPlatformSPN
+- name: reponame
+  value: $(Build.Repository.Name)
+- name: commitmessage
+  value: 'Sales_Ext'
+- name: repobranch
+  value: $(Build.SourceBranchName)
+- name: repopath
+  value: 'D365/CE/Solutions/SalesExtension'
+- name: solutionname
+  value: $(extsolutionname)
+- name: repopathpacked
+  value: 'D365/CE/Solutions/packed'
+- name: ismanaged
+  value: 'False'
+- name: artifactname
+  value: $(solutionname)
+
+stages:
+- stage: Custom_Publish
+  jobs:
+    - job: Workflow
+      timeoutInMinutes: 10
+      pool:
+        vmimage: 'windows-latest'
+      steps:
+      - checkout: none
+      - template: connectionflow-test.yml
+        parameters:
+          destenv: $(destenv)
+          solutionname: '$(solutionname)'

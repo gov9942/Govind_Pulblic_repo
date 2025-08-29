@@ -1,0 +1,35 @@
+parameters:
+- name: reponame
+- name: repobranch
+- name: repopath
+- name: commitmessage
+
+steps:
+- powershell: |
+   # Write your PowerShell commands here.     
+   git init
+   Write-Host "powershell-commit-test-New"
+   Write-Host "Repo - ${{ parameters.reponame }} - Branch2 $(repobranch)- MSG - ${{ parameters.commitmessage }} "
+   Write-Host "repopath ${{ parameters.repopath }}"   
+   git config user.email $(gitemail)
+   git config credential.useHttpPath true
+   git config --global credential.useHttpPath true
+   git config user.name $(gitusername)
+   git remote set-url --push origin https://$(gitusername):$(gitpassword)@dev.azure.com/gocloudclient0563/OPGT%20IT%20Modernization/_git/$(reponame)
+   #New-Item -Path ${{ parameters.repopath }} -Name "test1.txt"
+   #Get-ChildItem -Path ${{ parameters.repopath }} -Recurse -Force
+   git fetch origin
+   git status 
+   git add ${{ parameters.repopath }}/* .
+   git stash
+   Write-Host "Status"
+   git status
+   git pull origin ${{ parameters.repobranch }}
+   git stash pop
+   git add ${{ parameters.repopath }}/* .
+   git commit -m "${{ parameters.commitmessage}}" 
+   Write-Host "Commit Done"
+   git push -u origin ${{ parameters.repobranch }}
+   
+  displayName: 'Repo - PowerShell Script'
+  continueOnError: true

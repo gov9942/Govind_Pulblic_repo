@@ -1,0 +1,62 @@
+name: "$(managed_releasenumber)$(Rev:r)"
+trigger: 
+- none
+
+#  branches:
+#   exclude:
+#     - opgt-dev
+#  paths:
+#    include:
+#      - D365/CE/Settings/Opgt-Dev
+#    exclude:
+#      - D365/CE
+pool:
+  vmimage: 'windows-latest'
+  name: 'DMC-Dev'
+
+variables:
+- name: srcenv
+  value: 'D365-Dmc-dev'
+- name: PowerPlatformSPN
+- name: repobranch
+  value: $(Build.SourceBranchName)
+- name: repopath
+  value: 'D365/CE/Solutions/SalesDependency'
+- name: ismanaged
+  value: 'true'
+- name: solutionname
+  value: $(dependencyname)
+#
+- name: artifactname
+  value: $(dependencyname)
+- name: publish
+- name: filepath
+  value: '$(System.DefaultWorkingDirectory)\$(artifactname)\$(solutionname)_$(versionnumber).zip'
+- group: OPGT 
+- group: jts
+stages:
+- stage: Build_Deploy
+  jobs:
+    - job: Basic_Tasks
+      condition: true
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+      - template: basictask.yml
+        parameters:
+         srcenv: $(srcenv)
+
+    - job: build_solution
+      condition: true
+      dependsOn: Basic_Tasks
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+      - template: solutionbuild.yml
+        parameters:
+          srcenv: $(srcenv)
+          ismanaged: '$(ismanaged)'
+          solutionname: '$(solutionname)'
+          artifactname: '$(artifactname)'

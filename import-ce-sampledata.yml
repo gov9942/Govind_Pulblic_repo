@@ -1,0 +1,42 @@
+name: "$(Build.DefinitionName) - $(Rev:r)"
+trigger: 
+ - None
+
+parameters:
+  - name: EnvironmentConnections
+    type: object
+    default:
+      - name: 'D365-Jts-Qauat'
+  - name: AgentName
+    type: object
+    default:
+      - name: 'DMC-Dev'
+pool:
+  name: DMC-Dev
+  
+steps:
+- checkout: self
+  fetchDepth: 1
+  persistCredentials: True
+- task: PowerPlatformToolInstaller@2
+  displayName: 'Power Platform Tool Installer '
+
+- ${{ each connection in parameters.connections }}:
+  - task: PowerPlatformWhoAmi@2
+    condition: true
+    displayName: 'Power Platform WhoAmI '
+    inputs:
+      authenticationType: PowerPlatformSPN
+      PowerPlatformSPN: ${{connection.name }}
+  - task: PowerPlatformImportData@2
+    inputs:
+      authenticationType: 'PowerPlatformSPN'
+      PowerPlatformSPN: ${{connection.name }}
+      Environment: '$(BuildTools.EnvironmentUrl)'
+      DataFile: '$(Build.SourcesDirectory)/D365/CE/Reference Data/reference_data.zip'
+  - task: PowerPlatformImportData@2
+    inputs:
+      authenticationType: 'PowerPlatformSPN'
+      PowerPlatformSPN: ${{connection.name }}
+      Environment: '$(BuildTools.EnvironmentUrl)'
+      DataFile: '$(Build.SourcesDirectory)/D365/CE/Reference Data/sample_data.zip'

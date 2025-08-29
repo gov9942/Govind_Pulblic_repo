@@ -1,0 +1,44 @@
+parameters:
+- name: solutionname
+  type: string
+  default: 'opgt'
+- name: ismanaged
+  type: string
+  default: 'true'
+- name: srcenv
+  type: string
+- name: artifactname
+  type: string
+  default: 'drop'
+steps:
+- task: microsoft-IsvExpTools.PowerPlatform-BuildTools.tool-installer.PowerPlatformToolInstaller@2
+  displayName: 'Power Platform Tool Installer '
+  
+- task: microsoft-IsvExpTools.PowerPlatform-BuildTools.publish-customizations.PowerPlatformPublishCustomizations@2
+  displayName: 'Power Platform Publish Customizations '
+  enabled: true
+  inputs:
+    authenticationType: PowerPlatformSPN
+    PowerPlatformSPN: $(srcenv)
+
+- task: PowerPlatformSetSolutionVersion@2
+  inputs:
+    authenticationType: 'PowerPlatformSPN'
+    PowerPlatformSPN: $(srcenv)
+    SolutionName: '$(solutionname)'
+    SolutionVersionNumber: '$(versionnumber)'
+
+- task: microsoft-IsvExpTools.PowerPlatform-BuildTools.export-solution.PowerPlatformExportSolution@2
+  displayName: 'Power Platform Export Solution '
+  inputs:
+    authenticationType: PowerPlatformSPN
+    PowerPlatformSPN: $(srcenv)
+    SolutionName: '$(solutionname)'
+    SolutionOutputFile: '$(Build.ArtifactStagingDirectory)\$(solutionname)_$(versionnumber).zip'
+    Managed: '${{parameters.ismanaged}}'
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: '$(artifactname)'
+    publishLocation: Container

@@ -1,0 +1,33 @@
+
+parameters:
+- name: repobranch
+  type: string
+  default: 'opgt-dev'
+- name: repopath
+  type: string
+- name: commitmessage
+  type: string
+  default: 'opgt'
+
+steps:
+- powershell: |
+   # Write your PowerShell commands here.   
+   git init
+   git config user.email $(gitemail)
+   git config user.name $(gitusername)
+   git remote set-url --push origin https://$(gitusername):$(gitpassword)@dev.azure.com/gocloudclient0563/OPGT%20IT%20Modernization/_git/OPGT%20IT%20Modernization
+   git status
+   git add $(repopath)/* .
+   git stash
+   Write-Host "Status"
+   git status
+   git pull origin $(repobranch)
+   git stash pop
+   git add $(repopath)/* .
+
+   git commit -m "$(commitmessage)"
+   Write-Host "Commit Done"
+   git push -u origin $(repobranch)  
+   
+  displayName: 'Repo Update - PowerShell Script'
+  continueOnError: true

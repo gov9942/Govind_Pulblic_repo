@@ -1,0 +1,142 @@
+# Write your PowerShell commands here.
+Write-Host "Rule publish"
+Write-Host "EnvironmentUrl:$(BuildTools.EnvironmentUrl)"
+$connectionString="AuthType=ClientSecret;url=$(BuildTools.EnvironmentUrl);ClientId=$(connectionVariables.BuildTools.ApplicationId);ClientSecret=$(connectionVariables.BuildTools.ClientSecret)"
+# Login to PowerApps for the Admin commands
+Write-Host "Login to PowerApps for the Admin commands"
+#start-process PowerShell -verb runas
+#Install-Module -Name NuGet -Force
+Install-Module  Microsoft.PowerApps.Administration.PowerShell -RequiredVersion "2.0.105" -Force -Scope CurrentUser
+Write-Host "test1"
+Write-Host "TenantID:$(connectionVariables.BuildTools.TenantId) - ApplicationId:$(connectionVariables.BuildTools.ApplicationId) - ClientSecret:$(connectionVariables.BuildTools.ClientSecret)"
+Add-PowerAppsAccount -TenantID '$(connectionVariables.BuildTools.TenantId)' -ApplicationId '$(connectionVariables.BuildTools.ApplicationId)' -ClientSecret '$(connectionVariables.BuildTools.ClientSecret)' -Endpoint "prod"
+
+# Login to PowerApps for the Xrm.Data commands
+Write-Host "Login to PowerApps for the Xrm.Data commands"
+Install-Module  Microsoft.Xrm.Data.PowerShell -RequiredVersion "2.8.14" -Force -Scope CurrentUser
+$conn = Get-CrmConnection -ConnectionString $connectionString
+$conns=( ConvertTo-Json ( $conn)) -replace "`n|`r",""
+#   Write-Host "Connection-first: $conn "
+
+# Get Rules in the solution that are connected
+Write-Host "Get Connected Rules"
+$rulesFetch = @"
+<fetch>
+    <entity name='duplicaterule' >
+    <attribute name="duplicateruleid" />
+    <attribute name="name" />
+    <attribute name="statecode" />
+    <filter>
+        <condition attribute='duplicateruleid' operator='not-null' />
+        <condition attribute='statecode' operator='eq' value='Inactive'/>
+    </filter>
+    <link-entity name='solutioncomponent' from='objectid' to='duplicateruleid' >
+        <link-entity name='solution' from='solutionid' to='solutionid' >
+        <filter>
+            <condition attribute='uniquename' operator='eq' value='$(basesolutionname)' />
+        </filter>
+        </link-entity>
+    </link-entity>
+    </entity>
+</fetch>
+"@;
+$rules = (Get-CrmRecordsByFetch  -conn $conn -Fetch $rulesFetch -Verbose).CrmRecords
+    
+# If there are no rules that are connected then exit
+if ($rules.Count -eq 0)
+{
+    Write-Host "##vso[task.logissue type=warning]No Rules Turned off that are connected in the solution '$(basesolutionname)'"
+    Write-Output "No Rules Turned off that are connected in the solution '$(basesolutionname)'"
+    exit(0)
+}
+
+##$Existingrules = (ConvertTo-Json ($rules | Select-Object -Property duplicateruleid,name,statecode,ownerid)) -replace "`n|`r",""
+# Write-Host "##vso[task.setvariable variable=CONNECTION_REFS]$Existingrules"
+#Write-Host "existing Rules:$Existingrules"
+
+# Turn on rules        
+foreach ($rule in $rules)
+{
+    Write-Output "Publishing rule :($rule.name)"
+    $DuplicateRulePublishRequest = New-Object Microsoft.Crm.Sdk.Messages.PublishDuplicateRuleRequest
+    $DuplicateRulePublishRequest.DuplicateRuleId = $rule.duplicateruleid
+    $conn.ExecuteCrmOrganizationRequest($DuplicateRulePublishRequest)
+    if($conn.LastCrmException -ne $null)
+    {
+        throw LastCrmConnectorException($conn)
+    }
+}
+
+
+- task: PowerShell@2
+enabled: false
+displayName: 'Powershell'
+env:
+SYSTEM_ACCESSTOKEN: $(system.accesstoken)
+inputs:
+targetType: 'inline'
+script: |
+Write-Host "EnvironmentUrl:$(BuildTools.EnvironmentUrl)"
+$connectionString="AuthType=ClientSecret;url=$(BuildTools.EnvironmentUrl);ClientId=$(connectionVariables.BuildTools.ApplicationId);ClientSecret=$(connectionVariables.BuildTools.ClientSecret)"
+# Login to PowerApps for the Admin commands
+Write-Host "Login to PowerApps for the Admin commands"
+Install-Module  Microsoft.PowerApps.Administration.PowerShell -RequiredVersion "2.0.105" -Force -Scope CurrentUser
+Write-Host "test1"
+Write-Host "TenantID:$(connectionVariables.BuildTools.TenantId) - ApplicationId:$(connectionVariables.BuildTools.ApplicationId) - ClientSecret:$(connectionVariables.BuildTools.ClientSecret)"
+Add-PowerAppsAccount -TenantID '$(connectionVariables.BuildTools.TenantId)' -ApplicationId '$(connectionVariables.BuildTools.ApplicationId)' -ClientSecret '$(connectionVariables.BuildTools.ClientSecret)' -Endpoint "prod"
+
+# Login to PowerApps for the Xrm.Data commands
+Write-Host "Login to PowerApps for the Xrm.Data commands"
+Install-Module  Microsoft.Xrm.Data.PowerShell -RequiredVersion "2.8.14" -Force -Scope CurrentUser
+$conn = Get-CrmConnection -ConnectionString $connectionString
+$conns=( ConvertTo-Json ( $conn)) -replace "`n|`r",""
+#   Write-Host "Connection-first: $conn "
+
+# Get Rules in the solution that are connected
+Write-Host "Get Connected Rules"
+$rulesFetch = @"
+<fetch>
+    <entity name='duplicaterule' >
+    <attribute name="duplicateruleid" />
+    <attribute name="name" />
+    <attribute name="statecode" />
+    <filter>
+        <condition attribute='duplicateruleid' operator='not-null' />
+        <condition attribute='statecode' operator='eq' value='Inactive'/>
+    </filter>
+    <link-entity name='solutioncomponent' from='objectid' to='duplicateruleid' >
+        <link-entity name='solution' from='solutionid' to='solutionid' >
+        <filter>
+            <condition attribute='uniquename' operator='eq' value='$(basesolutionname)' />
+        </filter>
+        </link-entity>
+    </link-entity>
+    </entity>
+</fetch>
+"@;
+$rules = (Get-CrmRecordsByFetch  -conn $conn -Fetch $rulesFetch -Verbose).CrmRecords
+    
+# If there are no rules that are connected then exit
+if ($rules.Count -eq 0)
+{
+    Write-Host "##vso[task.logissue type=warning]No Rules Turned off that are connected in the solution '$(basesolutionname)'"
+    Write-Output "No Rules Turned off that are connected in the solution '$(basesolutionname)'"
+    exit(0)
+}
+
+##$Existingrules = (ConvertTo-Json ($rules | Select-Object -Property duplicateruleid,name,statecode,ownerid)) -replace "`n|`r",""
+# Write-Host "##vso[task.setvariable variable=CONNECTION_REFS]$Existingrules"
+#Write-Host "existing Rules:$Existingrules"
+
+# Turn on rules        
+foreach ($rule in $rules)
+{
+    Write-Output "Publishing rule :($rule.name)"
+    $DuplicateRulePublishRequest = New-Object Microsoft.Crm.Sdk.Messages.PublishDuplicateRuleRequest
+    $DuplicateRulePublishRequest.DuplicateRuleId = $rule.duplicateruleid
+    $conn.ExecuteCrmOrganizationRequest($DuplicateRulePublishRequest)
+    if($conn.LastCrmException -ne $null)
+    {
+        throw LastCrmConnectorException($conn)
+    }
+}

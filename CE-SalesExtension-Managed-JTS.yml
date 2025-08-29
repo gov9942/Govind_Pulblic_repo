@@ -1,0 +1,150 @@
+name: "$(managed_releasenumber)$(Rev:r)"
+trigger: 
+- none
+pool:
+  vmimage: 'windows-latest'
+  name: 'IST-CE-DEV-QA'
+
+parameters:
+  - name: saveziptorepo
+    displayName: 'Save ZIP file to repo?'
+    type: string
+    values:
+      - true
+      - false
+    default: false
+  - name: Environments
+    type: object
+    default:
+      - name: jts-dev2-dataverse-connection-reference
+        connectionid: shared-commondataser-ac30187b-4318-4d4f-94e5-262382eac0fc
+      - name: jts-dev-dataverse-connection-reference
+        connectionid: shared-commondataser-6f6315c3-b61b-4132-8378-e119c5040b5c
+      - name: jts-devqa-dataverse-connection-reference
+        connectionid: shared-commondataser-97368d5a-5be1-4c6a-b2ab-39d0bec3e4c0
+      - name: jts-qauat-dataverse-connection-reference
+        connectionid: shared-commondataser-90d8c511-21de-4320-bc6e-72a63c367fcc
+      - name: jts-preqauatdp-dataverse-connection-reference
+        connectionid: shared-commondataser-abac14b0-af0a-446e-8b9b-98829ba896cc
+      - name: jts-sit-dataverse-connection-reference
+        connectionid: shared-commondataser-cd0f3b46-1ca9-4748-97dd-a3e0363bbd82
+      - name: jts-dmdev-dataverse-connection-reference
+        connectionid: shared-commondataser-ac1c2342-0bbb-4ff9-ab07-4c3f0da958ba
+      - name: jts-dmqa-dataverse-connection-reference
+        connectionid: shared-commondataser-9ab7dd9f-2189-43f3-8c4e-5392b41536d9
+      - name: jts-dmqa2-dataverse-connection-reference
+        connectionid: shared-commondataser-2f5ebe17-d06d-4812-b8a4-1e09d4fd0e0e
+      - name: jts-dmProd-dataverse-connection-reference
+        connectionid: shared-commondataser-7a6c7e19-d140-48b1-92ff-ddb390baf579
+
+variables:
+- name: srcenv
+  value: 'D365-Jts-Dev2'
+- name: PowerPlatformSPN
+- name: reponame
+  value: $(Build.Repository.Name)
+- name: commitmessage
+  value: 'Sales_Ext'
+- name: repobranch
+  value: $(Build.SourceBranchName)
+- name: repopath
+  value: 'D365/CE/Solutions/SalesExtension'
+- name: repopathpacked
+  value: 'D365/CE/Solutions/packed'
+- name: ismanaged
+  value: 'true'
+- name: solutionname
+  value: $(extsolutionname)
+- name: artifactname
+  value: $(solutionname)
+- name: publish
+- name: filepath
+  value: '$(System.DefaultWorkingDirectory)\$(artifactname)\$(solutionname)_$(versionnumber).zip'
+- group: OPGT 
+- name: settingsRepopath
+  value: '$(System.DefaultWorkingDirectory)\D365\CE\Settings'
+- name: solutionfilepath
+  value: '$(Build.ArtifactStagingDirectory)\$(solutionname)_$(versionnumber).zip'
+
+stages:
+- stage: Build_Deploy
+  jobs:
+    - job: Basic_Tasks
+      condition: true
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+      - template: basictask.yml
+        parameters:
+         srcenv: $(srcenv)
+
+    - job: build_solution
+      condition: true
+      dependsOn: Basic_Tasks
+      timeoutInMinutes: 60
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+
+      - ${{ if eq(parameters.saveziptorepo, true) }}: 
+          - template: powershell-clean.yml
+            parameters:
+              repobranch: $(repobranch)
+              repopath: $(repopathpacked)
+              solutionname: $(solutionname)
+      - template: solutionbuild.yml
+        parameters:
+          srcenv: $(srcenv)
+          ismanaged: '$(ismanaged)'
+          solutionname: '$(solutionname)'
+          artifactname: '$(artifactname)'
+
+      - ${{ if eq(parameters.saveziptorepo, true) }}: 
+        - task: CopyFiles@2
+          inputs:
+            SourceFolder: '$(Build.ArtifactStagingDirectory)'
+            Contents: '$(solutionname)_$(versionnumber).zip'
+            TargetFolder: '$(repopathpacked)'
+        - template: powershell-commit.yml
+          parameters:
+            reponame: $(Build.Repository.Name)
+            repobranch: $(repobranch)
+            repopath: $(repopathpacked)
+            commitmessage: '$(solutionname)-$(versionnumber)'
+ 
+      - task: NuGetToolInstaller@1
+        displayName: 'Use NuGet '
+      - task: NuGetCommand@2
+        displayName: 'NuGet custom'
+        inputs:
+          command: custom
+          arguments: 'install Microsoft.PowerApps.CLI -OutputDirectory pac'
+              
+      - ${{ each env in parameters.Environments }}:
+        - template: Generate-deploy-setting.yml
+          parameters:
+            solutionfilepath: $(solutionfilepath)
+            connectionname: '${{ env.name }} '
+            connectionid: '${{ env.connectionid }} '
+            artifactname: '$(artifactname)'
+            settingsRepopath: '$(settingsRepopath)'
+      - template: powershell-commit.yml
+        parameters:
+          reponame: $(Build.Repository.Name)
+          repobranch: $(repobranch)
+          repopath: $(settingsRepopath)
+          commitmessage: 'Deploy Settings - $(versionnumber)'
+
+
+
+ 
+      # - ${{ if eq(parameters.saveziptorepo, true) }}: 
+      #     - task: PowerPlatformExportSolution@2
+      #       enabled: false
+      #       inputs:
+      #         authenticationType: 'PowerPlatformSPN'
+      #         PowerPlatformSPN: $(srcenv)
+      #         SolutionName: '$(solutionname)'
+      #         SolutionOutputFile: $(repopathpacked)\packed_$(solutionname)_$(versionnumber).zip

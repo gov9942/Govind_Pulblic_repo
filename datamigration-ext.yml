@@ -1,0 +1,81 @@
+name: "$(managed_releasenumber)$(Rev:r)"
+trigger: 
+ - None
+parameters:
+  - name: EnvironmentConnections
+    type: object
+    default:
+      - name: 'D365-Jts-DEVQA'
+  - name: AgentName
+    type: object
+    default:
+      - name: 'IST-CE-DEV-QA'
+pool:
+  vmimage: 'windows-latest'
+  name: 'IST-CE-DEV-QA'
+steps:
+- checkout: self
+  fetchDepth: 1
+  persistCredentials: True
+- task: PowerPlatformToolInstaller@2
+  displayName: 'Power Platform Tool Installer '
+
+- ${{ each connection in parameters.EnvironmentConnections }}:
+  - task: PowerPlatformWhoAmi@2
+    condition: true
+    displayName: 'Power Platform WhoAmI '
+    inputs:
+      authenticationType: PowerPlatformSPN
+      PowerPlatformSPN: ${{connection.name }}
+  - task: PowerPlatformImportSolution@2
+    enabled: true
+    condition: true
+    displayName: 'Data Migration Extension Solution '
+    inputs:
+      authenticationType: PowerPlatformSPN
+      PowerPlatformSPN: ${{connection.name }}
+      SolutionInputFile: '$(Build.SourcesDirectory)/D365/CE/Solutions/DataMigrationExtensions/DataMigrationExtensions_1_0_0_7_managed.zip'
+  - task: PowerPlatformImportSolution@2
+    enabled: false
+    condition: false
+    displayName: 'Pcf Controls Solution '
+    inputs:
+      authenticationType: PowerPlatformSPN
+      PowerPlatformSPN: ${{connection.name }}
+      SolutionInputFile: '$(system.defaultworkingDirectory)\D365\CE\Solutions\OpgtPcfControls\Managed\opgt_pcf_autocomplete.zip'
+  - task: PowerPlatformImportSolution@2
+    enabled: true
+    condition: true
+    displayName: 'Data Integration Error Logs Managed Solution '
+    inputs:
+      authenticationType: PowerPlatformSPN
+      PowerPlatformSPN: ${{connection.name }}
+      SolutionInputFile: '$(Build.SourcesDirectory)/D365/CE/Solutions/IntegrationErrorLogs/OPGTIntegrationErrorLogs_1_0_0_17_managed.zip'
+      AsyncOperation: true
+      MaxAsyncWaitTime: '60'
+      OverwriteUnmanagedCustomizations: true
+      ConvertToManaged: true
+  - task: PowerPlatformImportSolution@2
+    enabled: false
+    condition: false
+    displayName: 'Sales Base Managed Solution '
+    inputs:
+      authenticationType: PowerPlatformSPN
+      PowerPlatformSPN: ${{connection.name }}
+      SolutionInputFile: '$(Build.SourcesDirectory)/D365/CE/Solutions/BeforeR2Deprecation/OPGTSalesBaseSolution_1_0_2_86_managed.zip'
+      AsyncOperation: true
+      MaxAsyncWaitTime: '60'
+      OverwriteUnmanagedCustomizations: true
+      ConvertToManaged: true
+  - task: PowerPlatformImportSolution@2
+    enabled: false
+    condition: false
+    displayName: 'Sales Extension Managed Solution '
+    inputs:
+      authenticationType: PowerPlatformSPN
+      PowerPlatformSPN: ${{connection.name }}
+      SolutionInputFile: '$(Build.SourcesDirectory)/D365/CE/Solutions/BeforeR2Deprecation/OPGTSalesExtensionSolution_1_0_2_21_managed.zip'
+      AsyncOperation: true
+      MaxAsyncWaitTime: '60'
+      OverwriteUnmanagedCustomizations: true
+      ConvertToManaged: true

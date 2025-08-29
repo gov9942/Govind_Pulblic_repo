@@ -1,0 +1,72 @@
+parameters:
+- name: solutionname
+  type: string
+  default: 'opgt'
+- name: artifactName
+  type: string
+  default: 'drop'
+- name: ismanaged
+  type: string
+  default: 'true'
+- name: destenv
+  type: string
+- name: publish
+  type: string
+  default: 'true'
+- name: filepath
+  type: string
+  default: '$(System.DefaultWorkingDirectory)\$(artifactname)\$(solutionname)_$(versionnumber).zip'
+- name: UseDeploymentSettingsFile
+  type: string
+  default: 'false'
+- name: DeploymentSettingsFile
+  type: string
+   
+steps:
+- task: microsoft-IsvExpTools.PowerPlatform-BuildTools.tool-installer.PowerPlatformToolInstaller@2
+  displayName: 'Power Platform Tool Installer '
+
+- task: DownloadBuildArtifacts@1
+  inputs:
+    buildType: 'current'
+    downloadType: 'single'
+    artifactName: '$(artifactName)'
+    downloadPath: '$(System.DefaultWorkingDirectory)'
+
+- powershell: |
+    # Write your PowerShell commands here.
+    Write-Host "Hello World "
+  #Get-ChildItem -Path $(Build.ArtifactStagingDirectory) -Recurse
+  #Get-ChildItem -Path $(System.DefaultWorkingDirectory) -Recurse
+    
+- ${{ if not(eq(parameters.UseDeploymentSettingsFile, true)) }}:
+  - task: microsoft-IsvExpTools.PowerPlatform-BuildTools.import-solution.PowerPlatformImportSolution@2
+    displayName: 'Power Platform Import Solution '
+    inputs:
+      authenticationType: PowerPlatformSPN
+      PowerPlatformSPN: $(destenv)
+      SolutionInputFile: $(filepath)
+      ConvertToManaged: $(ismanaged)
+      PublishCustomizationChanges: $(publish) 
+      OverwriteUnmanagedCustomizations: true  
+      #SkipProductUpdateDependencies: true
+
+- ${{ if not(eq(parameters.UseDeploymentSettingsFile, false)) }}:
+  - task: microsoft-IsvExpTools.PowerPlatform-BuildTools.import-solution.PowerPlatformImportSolution@2
+    displayName: 'Power Platform Import Solution '
+    inputs:
+      authenticationType: PowerPlatformSPN
+      PowerPlatformSPN: $(destenv)
+      SolutionInputFile: $(filepath)
+      ConvertToManaged: $(ismanaged)
+      PublishCustomizationChanges: $(publish) 
+      OverwriteUnmanagedCustomizations: true  
+      UseDeploymentSettingsFile: $(UseDeploymentSettingsFile)
+      DeploymentSettingsFile: $(DeploymentSettingsFile)
+
+- task: PowerPlatformPublishCustomizations@2
+  inputs:
+    authenticationType: 'PowerPlatformSPN'
+    PowerPlatformSPN: $(destenv)
+    AsyncOperation: true
+    MaxAsyncWaitTime: '60'

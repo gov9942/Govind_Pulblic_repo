@@ -1,0 +1,188 @@
+trigger:
+- none
+pool:
+  vmImage: windows-latest
+
+variables:
+- name: rule
+  value: 'DDR'
+stages:
+- stage: basic
+  jobs:
+  - job: basic
+    steps:
+    - task: PowerShell@2
+      enabled: true
+      displayName: 'Powershell'
+      env:
+        SYSTEM_ACCESSTOKEN: $(system.accesstoken)
+      inputs:
+        targetType: 'inline'
+        script: |
+            $connectionString = 'AuthType=ClientSecret;url=https://opgt-dmc-qa.crm.dynamics.com;ClientId=861a6f89-1b14-45ee-b3cd-776a44aa2a07;ClientSecret=adm8Q~bKxQUkxnb_-iAMEV5TiGM2GQ~KS5a~caC9'
+            # Login to PowerApps for the Admin commands
+            Write-Host "Login to PowerApps for the Admin commands"
+            Install-Module  Microsoft.PowerApps.Administration.PowerShell -RequiredVersion "2.0.105" -Force -Scope CurrentUser
+            Add-PowerAppsAccount -TenantID '$(tenantid)' -ApplicationId '$(applicationid)' -ClientSecret '$(secret)' -Endpoint "prod"
+            $azureactivedirectoryobjectid = "8b511e00-1e0b-403f-8ca4-00c6ff8127c7"
+
+            # Login to PowerApps for the Xrm.Data commands
+            Write-Host "Login to PowerApps for the Xrm.Data commands"
+            Install-Module  Microsoft.Xrm.Data.PowerShell -RequiredVersion "2.8.14" -Force -Scope CurrentUser
+            $conn = Get-CrmConnection -ConnectionString $connectionString
+            $conns=( ConvertTo-Json ( $conn)) -replace "`n|`r",""
+             #   Write-Host "Connection-first: $conn "
+            #    Write-Host "Connection-first: $conns"
+            # Get the Orgid
+            $org = (Get-CrmRecords -conn $conn -EntityLogicalName organization).CrmRecords[0]
+            $orgid =$org.organizationid
+            #    Write-Host "ORG: $org"
+                Write-Host "ORGID: $orgid"
+
+            # Get Rules in the solution that are connected
+            Write-Host "Get Connected Rules"
+            $rulesFetch = @"
+            <fetch>
+                <entity name='duplicaterule' >
+                <attribute name="duplicateruleid" />
+                <attribute name="name" />
+                <attribute name="statecode" />
+                <filter>
+                    <condition attribute='duplicateruleid' operator='not-null' />
+                    <condition attribute='statecode' operator='eq' value='Inactive'/>
+                </filter>
+                <link-entity name='solutioncomponent' from='objectid' to='duplicateruleid' >
+                    <link-entity name='solution' from='solutionid' to='solutionid' >
+                    <filter>
+                        <condition attribute='uniquename' operator='eq' value='$(basesolutionname)' />
+                    </filter>
+                    </link-entity>
+                </link-entity>
+                </entity>
+            </fetch>
+            "@;
+            $rules = (Get-CrmRecordsByFetch  -conn $conn -Fetch $rulesFetch -Verbose).CrmRecords
+                
+            # If there are no rules that are connected then exit
+            if ($rules.Count -eq 0)
+            {
+                Write-Host "##vso[task.logissue type=warning]No Rules that are connected in the solution '$(basesolutionname)'"
+                Write-Output "No Rules Turned off that are connected in the solution '$(basesolutionname)'"
+                exit(0)
+            }
+
+            # $ruless=( ConvertTo-Json ( $rules)) -replace "`n|`r",""
+            # Write-Host "Connection Refs:$ruless"
+            # $ruleId = $rules.duplicateruleid
+            # Write-Host "RuleId:$ruleId"
+            
+            ##$Existingrules = (ConvertTo-Json ($rules | Select-Object -Property duplicateruleid,name,statecode,ownerid)) -replace "`n|`r",""
+            # Write-Host "##vso[task.setvariable variable=CONNECTION_REFS]$Existingrules"
+            #Write-Host "existing Rules:$Existingrules"
+            # $ExistruleId = $Existingrules.duplicateruleid
+            # Write-Host "existing RuleId:$ExistruleId"
+            # Turn on rules
+            
+            foreach ($rule in $rules)
+            {
+              Write-Output "Publishing rule :($rule.name)"
+              $DuplicateRulePublishRequest = New-Object Microsoft.Crm.Sdk.Messages.PublishDuplicateRuleRequest
+              $DuplicateRulePublishRequest.DuplicateRuleId = $rule.duplicateruleid
+              $conn.ExecuteCrmOrganizationRequest($DuplicateRulePublishRequest)
+                if($conn.LastCrmException -ne $null)
+                {
+                  throw LastCrmConnectorException($conn)
+                }
+            }
+            
+            # Write-Output "Turning on Publish:"
+            # Set-CrmRecordState -conn $conn -EntityLogicalName duplicaterule -Id $ruleId -StateCode Active -StatusCode Activated -Verbose -Debug
+
+
+            # # Get the first connection reference connector that is not null and load it to find who it was created by
+            # $envid =$conn.EnvironmentId
+            # Write-Host "EnvID-0 - $envid" 
+
+            # $connections = Get-AdminPowerAppruleserences -EnvironmentName $envid -AppName $(applicationid)
+            # $connectionss=( ConvertTo-Json ($connections)) -replace "`n|`r",""
+            # Write-Host "Connectionrr - $connectionss"
+
+            # $appname = Get-AdminPowerApp -EnvironmentName $envid -AppName $(applicationid)
+            # $appnames=( ConvertTo-Json ($appname)) -replace "`n|`r",""
+            # Write-Host "appname - $appnames"
+            # Write-Host "appname-ori - $appname "
+
+            # <#
+            # $user = Get-CrmRecords -conn $conn -EntityLogicalName systemuser -FilterAttribute isdisabled -FilterOperator eq -FilterValue $false -Fields systemuserid,fullname
+            # $userr=( ConvertTo-Json ($user)) -replace "`n|`r",""
+            #     Write-Host "Uservalue2 - $userr"
+            # # $user.CrmRecords
+            # $connections = Get-AdminPowerAppruleserences -EnvironmentName $envid
+            # $connectionss=( ConvertTo-Json ($connections)) -replace "`n|`r",""
+            # Write-Host "Connection - $connectionss"
+
+            # $user = Get-CrmRecords -conn $conn -EntityLogicalName systemuser -FilterAttribute isdisabled -FilterOperator eq -FilterValue $false -Fields systemuserid,fullname
+            # $userr=( ConvertTo-Json ($user)) -replace "`n|`r",""
+            #     Write-Host "User2 - $userr"
+            # # $user.CrmRecords
+
+            # $user = Get-CrmRecords -conn $conn -EntityLogicalName systemuser -FilterAttribute azureactivedirectoryobjectid -FilterOperator eq -FilterValue $azureactivedirectoryobjectid
+            #     $userr=( ConvertTo-Json ($user)) -replace "`n|`r",""
+            #     Write-Host "User2 - $userr"
+            # #>
+            # # Get the first connection reference connector that is not null and load it to find who it was created by
+            # $connectionsm = Get-AdminPowerAppConnection -EnvironmentName $conn.EnvironmentId  -Filter $Existingrules[0].connectionid
+            # $connectionsmm=( ConvertTo-Json ($connectionsm)) -replace "`n|`r",""
+            # Write-Host "Connectionmm - $connectionsmm"
+
+
+            # $user = Get-CrmRecords -conn $conn -EntityLogicalName systemuser -FilterAttribute azureactivedirectoryobjectid -FilterOperator eq -FilterValue $azureactivedirectoryobjectid
+            # $userr=( ConvertTo-Json ($user)) -replace "`n|`r",""
+            #     Write-Host "User2 - $userr" 
+
+            # # Create a new Connection to impersonate the creator of the connection reference
+            # $impersonatedconn = Get-CrmConnection -ConnectionString $connectionString
+            # $impersonatedconn.OrganizationWebProxyClient.CallerId = $user.CrmRecords[0].systemuserid
+                
+            # # Get the rules that are turned off
+            # Write-Host "Get rules that are turned off"
+            # $fetchrules = @"
+            # <fetch>
+            #     <entity name='workrule'>
+            #     <attribute name='category' />
+            #     <attribute name='name' />
+            #     <attribute name='statecode' />
+            #     <filter>
+            #         <condition attribute='category' operator='eq' value='5' />
+            #         <condition attribute='statecode' operator='eq' value='0' />
+            #     </filter>
+            #     <link-entity name='solutioncomponent' from='objectid' to='workruleid'>
+            #         <link-entity name='solution' from='solutionid' to='solutionid'>
+            #         <filter>
+            #             <condition attribute='uniquename' operator='eq' value='$(basesolutionname)' />
+            #         </filter>
+            #         </link-entity>
+            #     </link-entity>
+            #     </entity>
+            # </fetch>
+            # "@;
+
+            # $rules = (Get-CrmRecordsByFetch  -conn $conn -Fetch $fetchrules -Verbose).CrmRecords
+            # $ruless=( ConvertTo-Json ($rules)) -replace "`n|`r",""
+            #     Write-Output "rules available"
+            #     Write-Host "ruless - $ruless"
+            # $rules.CrmRecords
+                
+            # if ($rules.Count -eq 0)
+            # {
+            #     Write-Host "##vso[task.logissue type=warning]No rules that are turned off in '$(basesolutionname)."
+            #     Write-Output "No rules that are turned off in '$(basesolutionname)'"
+            #     exit(0)
+            # }
+                
+            # # Turn on rules
+            # foreach ($rule in $rules){
+            #     Write-Output "Turning on rule:$(($rule).name)"
+            #     Set-CrmRecordState -conn $impersonatedconn -EntityLogicalName workrule -Id $rule.workruleid -StateCode Activated -StatusCode Activated -Verbose -Debug
+            # }
+

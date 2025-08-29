@@ -1,0 +1,62 @@
+name: "$(unmanaged_releasenumber)$(Rev:r)"
+trigger:
+  - none
+pool: 
+  vmimage: 'windows-latest'
+variables:
+- group: OPGT
+- name: srcenv
+  value: 'D365-jts-Dev2'
+- name: destenv
+  value: 'D365-dmc-Dev'
+- name: repobranch
+  value: $(Build.SourceBranchName)
+- name: repopath
+  value: "D365/CE/Reference Data"
+- name: datafilename
+  value: 'reference_data.zip'
+- name: schemafilename
+  value: 'reference_schema.xml'
+- name: solutionname
+  value: 'Ref_Data'
+
+stages:
+  - stage: Build_Ref_data
+    condition: true
+    jobs:
+    - job: Ref_data
+      condition: true
+      continueOnError: false
+      cancelTimeoutInMinutes: 1
+      timeoutInMinutes: 30
+      steps:
+        - checkout: self
+          clean: true
+          persistCredentials: true
+        - task: PowerPlatformToolInstaller@2
+          displayName: 'Power Platform Tool Installer '
+        - task: PowerPlatformWhoAmi@2
+          displayName: 'Power Platform WhoAmI '
+          inputs:
+            authenticationType: PowerPlatformSPN
+            PowerPlatformSPN: $(srcenv)
+ 
+        - task: PowerPlatformExportData@2
+          displayName: 'Power Platform Export Data '
+          inputs:
+            authenticationType: PowerPlatformSPN
+            PowerPlatformSPN: $(srcenv)
+            SchemaFile: $(repopath)/$(schemafilename)
+            DataFile: '$(Build.ArtifactStagingDirectory)/$(datafilename)'
+            Overwrite: true
+
+        - task: PublishBuildArtifacts@1
+          displayName: 'Publish Artifact: Dev_Ref-data'
+          inputs:
+            ArtifactName: 'JTS_Dev_Refdata'
+        - task: PowerPlatformImportData@2
+          displayName: 'Power Platform Import Reference Data'
+          inputs:
+            authenticationType: PowerPlatformSPN
+            PowerPlatformSPN: $(destenv)
+            DataFile: '$(Build.ArtifactStagingDirectory)/$(datafilename)'

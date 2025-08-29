@@ -1,0 +1,200 @@
+name: "$(unmanaged_releasenumber)$(Rev:r)"
+trigger:
+- none
+pool:
+  name: 'IST-CE-DEV-QA'
+  vmimage: 'windows-latest'
+variables:
+- group: OPGT 
+- group: DEV2-CE-ASA
+- name: artifactweb
+  value: 'webresource'
+- name: artifactplug
+  value: 'plugin'
+- name: reponame
+  value: $(Build.Repository.Name)
+- name: commitmessage
+  value: 'webresource'
+- name: repobranch
+  value: $(Build.SourceBranchName)
+- name: repopath
+  value: 'D365/CE/Typescript/clientjs/dist'
+- name: solutionname
+  value: 'TS - JS Pipeline '
+- name: SLNPath
+  value: '**/OpgtSolution/**/*OpgtSolution.sln'
+- name: Today
+  value: $(Get-Date -Format "yyyy-MM-dd HH:mm")
+- name: qaurl
+  value: 'AuthType=ClientSecret;url=https://jts-opgt-devqa.crm3.dynamics.com;ClientId=f3b058a7-dd52-4382-a8dc-a5c1fd2bdca4;ClientSecret='
+
+resources:
+  repositories:
+  - repository: self
+    type: git
+    ref: refs/heads/$(repobranch)
+
+stages:
+  - stage: TS_JS_Webresource
+    condition: true
+    jobs:
+    - job: TS_JS
+      condition: true
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+      - task: Npm@1
+        displayName: 'npm install'
+        condition: true
+        inputs:
+          workingDir: '$(build.sourcesdirectory)/D365/CE/Typescript/clientjs'
+          verbose: false
+      - task: Npm@1
+        enabled: true
+        condition: true
+        inputs:
+          command: 'custom'
+          workingDir: '$(build.sourcesdirectory)/D365/CE/Typescript/clientjs'
+          customCommand: 'run-script dist'
+      - task: CopyFiles@2
+        displayName: 'Copy Files'
+        inputs:
+          SourceFolder: '$(build.sourcesdirectory)'
+          Contents: |
+            D365/CE/Serverside Code/DataverseDeployment/spkl/deploy-webresources.bat
+            D365/CE/Serverside Code/DataverseDeployment/spkl.json
+            D365/CE/Typescript/clientjs/dist/opgtmain.min.js
+          TargetFolder: '$(Build.ArtifactStagingDirectory)/$(artifactweb)'
+      - task: CopyFiles@2
+        displayName: 'Copy JS'
+        enabled: true
+        inputs:
+          SourceFolder: 'D365/CE/Typescript/clientjs/dist'
+          Contents: |
+            **/opgtmain.min.js
+          TargetFolder: '$(Build.ArtifactStagingDirectory)/$(artifactweb)/D365/CE/Typescript/clientjs/dist'
+      - task: CopyFiles@2
+        displayName: 'Copy JS '
+        enabled: true
+        inputs:
+          SourceFolder: 'D365/CE/Typescript/clientjs/dist'
+          Contents: |
+            **/opgtmain.min.js
+          TargetFolder: '$(System.DefaultWorkingDirectory)/D365/CE/Serverside Code/DataverseDeployment'
+
+      - task: PublishBuildArtifacts@1
+        inputs:
+          PathtoPublish: '$(Build.ArtifactStagingDirectory)/$(artifactweb)'
+          ArtifactName: $(artifactweb)
+          publishLocation: 'Container'
+
+    - job: Webresource_Deploy
+      dependsOn: TS_JS
+      condition: succeeded()
+      steps:
+          - checkout: none
+          - task: NuGetCommand@2
+            displayName: 'NuGet custom'
+            inputs:
+             command: custom
+             arguments: 'install spkl'
+          - task: DownloadBuildArtifacts@1
+            enabled: true
+            inputs:
+              buildType: 'current'
+              downloadType: 'single'
+              artifactName: $(artifactweb)
+              downloadPath: '$(System.DefaultWorkingDirectory)'
+
+          - powershell: |
+              Write-Host "Default folder"   
+              Get-ChildItem -Path $(System.DefaultWorkingDirectory) -Recurse -Force
+            displayName: 'PowerShell Script'
+            continueOnError: true
+            enabled: false
+
+          - task: BatchScript@1
+            displayName: 'SPKL-Webresource'
+            enabled: true
+            inputs:
+             filename: '$(System.DefaultWorkingDirectory)\$(artifactweb)\D365\CE\Serverside Code\DataverseDeployment\spkl\deploy-webresources.bat'
+             arguments: '$(qaurl)$(ce-clientsecret-sp)'
+
+  - stage: Plugin_deploy
+    condition: true
+    jobs:
+    - job: Plugin_Build
+      condition: true
+      continueOnError: false
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: True
+      - task: NuGetToolInstaller@1
+        inputs:
+          versionSpec: '5.8'
+      - task: NuGetCommand@2
+        displayName: 'NuGet restore'
+        inputs:
+          command: 'restore'
+          restoreSolution: $(SLNPath)
+          feedsToUse: 'select'
+      - task: MSBuild@1
+        continueOnError: true
+        inputs:
+          solution: $(SLNPath)
+          configuration: 'Debug'
+      - task: CopyFiles@2
+        displayName: 'Copy Files'
+        inputs:
+          SourceFolder: '$(build.sourcesdirectory)'
+          Contents: |
+            **/OpgtSolution/**/**.Plugins.dll
+            **/OpgtSolution/**/**CustomApi.dll
+            D365/CE/Serverside Code/DataverseDeployment/spkl/deploy-plugins.bat
+            D365/CE/Serverside Code/DataverseDeployment/spkl.json
+          TargetFolder: '$(Build.ArtifactStagingDirectory)/$(artifactplug)'
+      - task: CopyFiles@2
+        displayName: 'Copy Files'
+        inputs:
+          SourceFolder: '$(build.sourcesdirectory)/D365/CE/Serverside Code/DataverseDeployment'
+          Contents: |
+            spkl.json
+          TargetFolder: '$(Build.ArtifactStagingDirectory)/$(artifactplug)/D365/CE/Serverside Code/OpgtSolution'
+      - task: PublishBuildArtifacts@1
+        inputs:
+          PathtoPublish: '$(Build.ArtifactStagingDirectory)/$(artifactplug)'
+          ArtifactName: $(artifactplug)
+          publishLocation: 'Container'
+
+    - job: plugin_deploy
+      dependsOn: Plugin_Build
+      condition: succeeded()
+      steps:
+      - checkout: none
+      - task: NuGetCommand@2
+        displayName: 'NuGet custom'
+        inputs:
+          command: custom
+          arguments: 'install spkl'
+      - task: DownloadBuildArtifacts@1
+        inputs:
+          buildType: 'current'
+          downloadType: 'single'
+          artifactName: $(artifactplug)
+          downloadPath: '$(System.DefaultWorkingDirectory)'
+
+      - powershell: |
+          Write-Host "Hello World"   
+          Write-Host "Default folder"   
+          Get-ChildItem -Path $(System.DefaultWorkingDirectory)/D365/CE/Serverside Code -Recurse -Force
+        displayName: 'PowerShell Script'
+        continueOnError: true
+        enabled: false
+      - task: BatchScript@1
+        displayName: 'Plugin-SPKL'
+        enabled: true
+        inputs:
+          filename: '$(System.DefaultWorkingDirectory)\$(artifactplug)\D365\CE\Serverside Code\DataverseDeployment\spkl\deploy-plugins.bat'
+          arguments: '$(qaurl)$(ce-clientsecret-sp)'

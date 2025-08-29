@@ -1,0 +1,26 @@
+
+parameters:
+- name: repobranch
+  type: string
+  default: 'opgt-dev'
+- name: repopath
+  type: string
+- name: solutionname
+  type: string
+  default: 'opgt'
+
+steps:
+- powershell: |
+   # Write your PowerShell commands here.   
+          Write-Host "Hello World"
+          git init 
+          git config user.email $(gitemail)
+          git config user.name $(gitusername)
+          git remote set-url --push origin https://$(gitusername):$(gitpassword)@dev.azure.com/gocloudclient0563/OPGT%20IT%20Modernization/_git/OPGT%20IT%20Modernization
+          git pull --rebase origin $(repobranch)
+          git checkout $(repobranch)
+          git merge origin/$(repobranch)
+          git reset --hard origin/$(repobranch)
+          Write-Host "status"
+          git status   
+  displayName: 'Clean Git - PowerShell Script'
