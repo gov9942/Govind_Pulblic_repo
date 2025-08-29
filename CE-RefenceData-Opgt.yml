@@ -1,0 +1,112 @@
+name: "$(unmanaged_releasenumber)$(Rev:r)"
+trigger:
+  - none
+pool:
+  name: 'IST-CE-DEV-QA'
+  vmimage: 'windows-latest'
+variables:
+- group: OPGT
+- name: srcenv
+  value: 'D365-jts-Dev2'
+- name: repobranch
+  value: $(Build.SourceBranchName)
+- name: repopath
+  value: "D365/CE/Reference Data"
+- name: datafilename
+  value: 'reference_data.zip'
+- name: schemafilename
+  value: 'reference_schema.xml'
+- name: solutionname
+  value: 'Ref_Data'
+
+resources:
+  repositories:
+  - repository: self
+    type: git
+    ref: refs/heads/$(repobranch)
+
+stages:
+  - stage: Ref_data
+    condition: true
+    jobs:
+    - job: Ref_data
+      condition: true
+      continueOnError: false
+      cancelTimeoutInMinutes: 1
+      steps:
+        - checkout: self
+          clean: true
+          persistCredentials: true
+        - task: PowerPlatformToolInstaller@2
+          displayName: 'Power Platform Tool Installer '
+        - task: PowerPlatformWhoAmi@2
+          displayName: 'Power Platform WhoAmI '
+          inputs:
+            authenticationType: PowerPlatformSPN
+            PowerPlatformSPN: $(srcenv)
+
+        - template: powershell-clean.yml
+          parameters:
+            repobranch: $(repobranch)
+            repopath: $(repopath)
+            solutionname: 'TS-JS Pipeline'
+
+        - task: PowerPlatformExportData@2
+          displayName: 'Power Platform Export Data '
+          inputs:
+            authenticationType: PowerPlatformSPN
+            PowerPlatformSPN: $(srcenv)
+            SchemaFile: $(repopath)/$(schemafilename)
+            DataFile: '$(Build.ArtifactStagingDirectory)/$(datafilename)'
+            Overwrite: true
+        - task: CopyFiles@2
+          displayName: 'Copy Files'
+          inputs:
+            SourceFolder: '$(Build.ArtifactStagingDirectory)'
+            Contents: '*.zip'
+            TargetFolder: $(repopath)
+            OverWrite: true
+
+        - powershell: |
+            Write-Host "Hello World"   
+            Write-Host "Default folder- $(repopath)"   
+            Get-ChildItem -Path $(repopath) -Recurse -Force
+            Get-ChildItem -Path $(Build.ArtifactStagingDirectory) -Recurse -Force
+          displayName: 'PowerShell Script'
+          continueOnError: true
+          enabled: false
+
+        - task: PowerShell@2
+          enabled: true
+          continueOnError: true
+          displayName: 'Powershell-Repo'
+          env:
+            SYSTEM_ACCESSTOKEN: $(system.accesstoken)
+          inputs:
+            targetType: 'inline'
+            script: |
+              # Write your PowerShell commands here.
+              Write-Host "Repo folder- $(repopath)"   
+              $repobranch = '$(Build.SourceBranchName)'
+              git init
+              git config user.email $(gitemail)
+              git config credential.useHttpPath true
+              git config user.name $(gitusername)
+              git remote set-url --push origin https://$(gitusername):$(gitpassword)@dev.azure.com/gocloudclient0563/OPGT%20IT%20Modernization/_git/OPGT%20IT%20Modernization
+              git status
+              git add 'D365/CE/Reference Data/reference_data.zip'
+              git stash
+              Write-Host "Status"
+              git status
+              git pull origin $(Build.SourceBranchName)
+              git stash pop
+              git add 'D365/CE/Reference Data/reference_data.zip'
+              git commit -m "Ref Data - Pipeline" 
+              Write-Host "Commit Done"
+              git push origin $(Build.SourceBranchName)  
+
+        - task: PublishBuildArtifacts@1
+          displayName: 'Publish Artifact: Dev_Ref-data'
+          inputs:
+            ArtifactName: 'JTS_Dev_Refdata'
+

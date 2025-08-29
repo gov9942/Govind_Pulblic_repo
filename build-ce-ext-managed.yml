@@ -1,0 +1,128 @@
+name: "$(managed_releasenumber)$(Rev:r)"
+trigger: 
+- none
+pool:
+  vmimage: 'windows-latest'
+  name: 'DMC-Dev'
+
+parameters:
+  - name: saveziptorepo
+    displayName: 'Save ZIP file to repo?'
+    type: string
+    values:
+      - true
+      - false
+    default: false
+  - name: Environments
+    type: object
+    default:
+      - name: dmc-dev-dataverse-connection-reference
+        connectionid: shared-commondataser-06c16248-e80a-4eb2-8f15-6813ffbb2f3f
+      - name: dmc-qa-dataverse-connection-reference
+        connectionid: shared-commondataser-1255d4ff-9199-4871-bd97-7341c9fe3e29
+      - name: dmc-releasetest-dataverse-connection-reference
+        connectionid: shared-commondataser-02a16999-a37b-4622-8284-a1b2cbdbbc97
+      - name: jts-dev2-dataverse-connection-reference
+        connectionid: shared-commondataser-1977feed-d200-4e6b-9154-86b7b3a59e76
+      - name: jts-devqa-dataverse-connection-reference
+        connectionid: shared-commondataser-79ff8741-8c3a-499e-8289-7e11277e6601
+      - name: jts-qauat-dataverse-connection-reference
+        connectionid: shared-commondataser-90d8c511-21de-4320-bc6e-72a63c367fcc
+
+variables:
+- name: srcenv
+  value: 'D365-Dmc-Dev'
+- name: PowerPlatformSPN
+- name: repobranch
+  value: $(Build.SourceBranchName)
+- name: repopath
+  value: 'D365/CE/Solutions/SalesBase'
+- name: repopathpacked
+  value: 'D365/CE/Solutions/packed'
+- name: ismanaged
+  value: 'true'
+- name: solutionname
+  value: $(extsolutionname)
+- name: artifactname
+  value: $(solutionname)
+- name: publish
+- name: filepath
+  value: '$(System.DefaultWorkingDirectory)\$(artifactname)\$(solutionname)_$(versionnumber).zip'
+- group: OPGT 
+- name: settingsRepopath
+  value: '$(System.DefaultWorkingDirectory)\D365\CE\Settings'
+- name: solutionfilepath
+  value: '$(Build.ArtifactStagingDirectory)\$(solutionname)_$(versionnumber).zip'
+
+stages:
+- stage: Build_Deploy
+  jobs:
+    - job: Basic_Tasks
+      condition: true
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+      - template: basictask.yml
+        parameters:
+         srcenv: $(srcenv)
+
+    - job: build_solution
+      condition: true
+      dependsOn: Basic_Tasks
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+
+      - ${{ if eq(parameters.saveziptorepo, true) }}: 
+          - template: powershell-clean.yml
+            parameters:
+              repobranch: $(repobranch)
+              repopath: $(repopathpacked)
+              solutionname: $(solutionname)
+      - template: solutionbuild.yml
+        parameters:
+          srcenv: $(srcenv)
+          ismanaged: '$(ismanaged)'
+          solutionname: '$(solutionname)'
+          artifactname: '$(artifactname)'
+      - task: CopyFiles@2
+        inputs:
+          SourceFolder: '$(Build.ArtifactStagingDirectory)'
+          Contents: '$(solutionname)_$(versionnumber).zip'
+          TargetFolder: '$(repopathpacked)'
+      - task: NuGetToolInstaller@1
+        displayName: 'Use NuGet '
+      - task: NuGetCommand@2
+        displayName: 'NuGet custom'
+        inputs:
+          command: custom
+          arguments: 'install Microsoft.PowerApps.CLI -OutputDirectory pac'
+              
+      - ${{ each env in parameters.Environments }}:
+        - template: Generate-deploy-setting.yml
+          parameters:
+            solutionfilepath: $(solutionfilepath)
+            connectionname: '${{ env.name }} '
+            connectionid: '${{ env.connectionid }} '
+            artifactname: '$(artifactname)'
+            settingsRepopath: '$(settingsRepopath)'
+
+      - ${{ if eq(parameters.saveziptorepo, true) }}: 
+          - template: powershell-commit.yml
+            parameters:
+              repobranch: $(Build.SourceBranchName)
+              repopath: $(repopathpacked)
+              solutionname: $(solutionname)
+ 
+
+ 
+      # - ${{ if eq(parameters.saveziptorepo, true) }}: 
+      #     - task: PowerPlatformExportSolution@2
+      #       enabled: false
+      #       inputs:
+      #         authenticationType: 'PowerPlatformSPN'
+      #         PowerPlatformSPN: $(srcenv)
+      #         SolutionName: '$(solutionname)'
+      #         SolutionOutputFile: $(repopathpacked)\packed_$(solutionname)_$(versionnumber).zip

@@ -1,0 +1,2 @@
+- script: 
+    echo "Version Num - $(versionnumber),- $(releasenumber),- $(Build.BuildNumber)"

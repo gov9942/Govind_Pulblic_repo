@@ -1,0 +1,133 @@
+name: "$(unmanaged_releasenumber)$(Rev:r)"
+trigger: 
+- none
+
+pool:
+#  name: 'IST-CE-DEV-QA'
+  vmimage: 'windows-latest'
+
+parameters:
+- name: Environments
+  type: object
+  default:
+    - name: jts-dev2-dataverse-connection-reference
+      connectionid: shared-commondataser-ac30187b-4318-4d4f-94e5-262382eac0fc
+
+variables:
+- group: OPGT
+- name: srcenv
+  value: 'D365-Jts-Dev2'
+- name: destenv
+  value: 'D365-Dmc-Dev'
+- name: PowerPlatformSPN
+- name: repobranch
+  value: $(Build.SourceBranchName)
+- name: repopath
+  value: 'D365/CE/Solutions/SalesExtension'
+- name: solutionname
+  value: $(extsolutionname)
+- name: repopathpacked
+  value: 'D365/CE/Solutions/packed'
+- name: ismanaged
+  value: 'False'
+- name: artifactname
+  value: $(solutionname)
+- name: publish
+- name: filepath
+  value: '$(System.DefaultWorkingDirectory)\$(artifactname)\$(solutionname)_$(versionnumber).zip'
+- name: settingsRepopath
+  value: '$(System.DefaultWorkingDirectory)\D365\CE\Settings'
+- name: solutionfilepath
+  value: '$(Build.ArtifactStagingDirectory)\$(solutionname)_$(versionnumber).zip'
+- name: UseDeploymentSettingsFile
+  value: true
+- name: DeploymentSettingsFile
+  value: '$(System.DefaultWorkingDirectory)\$(artifactname)\jts-dev2\deploymentsettings.json'
+
+stages:
+- stage: Build
+  jobs:
+    - deployment: 'Ext_Unmanaged'
+      environment: 'opgt'
+    - job: Basic_Tasks
+      dependsOn: 'Ext_Unmanaged'
+      condition: succeeded()
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+      - template: basictask.yml
+        parameters:
+         srcenv: $(srcenv)
+
+    - job: build_solution
+      continueOnError: true
+      dependsOn: Basic_Tasks
+      condition: succeeded()
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+
+      - template: solutionbuild.yml
+        parameters:
+          srcenv: $(srcenv)
+          ismanaged: $(ismanaged)
+          solutionname: '$(solutionname)'
+          artifactname: '$(artifactname)'
+
+      - task: NuGetToolInstaller@1
+        displayName: 'Use NuGet '
+      - task: NuGetCommand@2
+        displayName: 'NuGet custom'
+        inputs:
+          command: custom
+          arguments: 'install Microsoft.PowerApps.CLI -OutputDirectory pac'
+              
+      - ${{ each env in parameters.Environments }}:
+        - template: Generate-deploy-setting.yml
+          parameters:
+            solutionfilepath: $(solutionfilepath)
+            connectionname: '${{ env.name }} '
+            connectionid: '${{ env.connectionid }} '
+            artifactname: '$(artifactname)'
+            settingsRepopath: '$(settingsRepopath)'
+      - task: CopyFiles@2
+        displayName: 'Copy Files'
+        inputs:
+          SourceFolder: '$(Build.ArtifactStagingDirectory)'
+          Contents: |
+            $(solutionname)_$(versionnumber).zip
+          TargetFolder: $(repopathpacked)
+
+- stage: Test
+  dependsOn: Build
+  jobs:
+    - job: test
+      condition: true
+      steps:
+      - checkout: none
+      - script: 
+          echo "Automation Test"
+
+- stage: Deploy
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+    - job: Deploy
+      condition: true
+      steps:
+      - template: deploy.yml
+        parameters:
+          destenv: $(destenv)
+          ismanaged: $(ismanaged)
+          publish: 'true'
+          filepath: '$(System.DefaultWorkingDirectory)\$(artifactname)\$(solutionname)_$(versionnumber).zip'
+          solutionname: $(solutionname)
+          artifactname: $(artifactname)
+          UseDeploymentSettingsFile: false
+          DeploymentSettingsFile: $(DeploymentSettingsFile)
+
+          #UseDeploymentSettingsFile: False
+          #DeploymentSettingsFile: '$(System.DefaultWorkingDirectory)\$(artifactname)\qa\deploymentsettings.json'
+

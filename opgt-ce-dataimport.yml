@@ -1,0 +1,47 @@
+name: "$(unmanaged_releasenumber)$(Rev:r)"
+trigger: 
+- none
+pool:
+  name: 'DMC-Dev'
+  vmimage: 'windows-latest'
+
+variables:
+- group: OPGT 
+- name: srcenv
+  value: 'D365-Jts-Dev2'
+- name: destenv
+  value: 'D365-Jts-DevQa'
+- name: PowerPlatformSPN
+
+stages:
+- stage: Export
+  jobs:
+  - job: Export
+    condition: true
+    steps:
+    - checkout: self
+      clean: true
+      persistCredentials: true
+    - template: basictask.yml
+      parameters:
+        srcenv: $(srcenv)
+    - task: PowerPlatformExportData@2
+      displayName: 'Export Data '
+      inputs:
+          authenticationType: PowerPlatformSPN
+          PowerPlatformSPN: $(srcenv)
+          SchemaFile: '$(Build.ArtifactStagingDirectory)/D365/CE/Reference Data/reference_schema.xml'
+          DataFile: '$(Build.ArtifactStagingDirectory)/reference_data.zip'
+          Overwrite: true
+
+- stage: Import
+  jobs:
+    - job: Import
+      condition: true
+      steps:
+      - task: PowerPlatformImportData@2
+        displayName: 'Import Reference Data'
+        inputs:
+            authenticationType: PowerPlatformSPN
+            PowerPlatformSPN: $(destenv)
+            DataFile: '$(Build.ArtifactStagingDirectory)/reference_data.zip'

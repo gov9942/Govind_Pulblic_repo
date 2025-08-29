@@ -1,0 +1,99 @@
+name: "$(unmanaged_releasenumber)$(Rev:r)"
+trigger: 
+- none
+
+pool:
+#  name: 'DMC-Dev'
+  vmimage: 'windows-latest'
+
+variables:
+- group: OPGT 
+- name: srcenv
+  value: 'D365-jts-Dev2'
+- name: destenv
+  value: 'D365-dmc-Dev'
+- name: PowerPlatformSPN
+- name: repobranch
+  value: $(Build.SourceBranchName)
+- name: repopath
+  value: 'D365/CE/Solutions/SalesBase'
+- name: solutionname
+  value: $(basesolutionname)
+- name: ismanaged
+  value: 'False'
+- name: artifactname
+  value: $(solutionname)
+- name: publish
+- name: filepath
+  value: '$(System.DefaultWorkingDirectory)\$(artifactname)\$(solutionname)_$(versionnumber).zip'
+
+stages:
+- stage: Build
+  jobs:
+    - deployment: 'Base_Unmanaged'
+      environment: 'opgt'
+    - job: Basic_Tasks
+      condition: true
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+      - template: basictask.yml
+        parameters:
+         srcenv: $(srcenv)
+
+    - job: build_solution
+      continueOnError: true
+      dependsOn: Basic_Tasks
+      condition: succeeded()
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+      - template: solutionbuild.yml
+        parameters:
+          srcenv: $(srcenv)
+          ismanaged: $(ismanaged)
+          solutionname: '$(solutionname)'
+          artifactname: '$(artifactname)'
+
+- stage: Test
+  dependsOn: Build
+  jobs:
+    - job: test
+      condition: true
+      steps:
+      - checkout: none
+      - script: 
+          echo "Automation Test"
+
+- stage: Deploy
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+    - job: Deploy
+      condition: true
+      timeoutInMinutes: 180
+      steps:
+      - template: deploy.yml
+        parameters:
+          destenv: $(destenv)
+          ismanaged: $(ismanaged)
+          publish: 'true'
+          filepath: '$(System.DefaultWorkingDirectory)\$(artifactname)\$(solutionname)_$(versionnumber).zip'
+          solutionname: $(solutionname)
+          artifactname: $(artifactname)
+          UseDeploymentSettingsFile: false
+          DeploymentSettingsFile: 'No Settings'
+
+    - job: Custom_Publish
+      dependsOn: Deploy
+      condition: succeeded()
+      pool:
+        vmimage: 'windows-latest'
+      steps:
+      - checkout: none
+      - template: rulepublish.yml
+        parameters:
+          destenv: $(destenv)
+          solutionname: '$(solutionname)'

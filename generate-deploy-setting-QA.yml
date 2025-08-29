@@ -1,0 +1,70 @@
+parameters:
+- name: solutionfile
+  type: string
+  default: '$(extsolutionname)_$(versionnumber).zip'
+- name: srcenv
+  type: string
+- name: artifactname
+  type: string
+- name: settingsRepopath
+  type: string
+
+steps:
+- task: microsoft-IsvExpTools.PowerPlatform-BuildTools.tool-installer.PowerPlatformToolInstaller@2
+  displayName: 'Power Platform Tool Installer '
+- task: NuGetToolInstaller@1
+  displayName: 'Use NuGet '
+
+- task: NuGetCommand@2
+  displayName: 'NuGet custom'
+  inputs:
+    command: custom
+    arguments: 'install Microsoft.PowerApps.CLI -OutputDirectory pac'
+
+- task: PowerShell@2
+  enabled: true
+  displayName: 'Powershell'
+  continueOnError: false
+  env:
+    SYSTEM_ACCESSTOKEN: $(system.accesstoken)
+  inputs:
+    targetType: 'inline'
+    script: |
+        Write-Host "Deploy file Generates"
+
+        $pacNugetFolder = Get-ChildItem "pac" | Where-Object {$_.Name -match "Microsoft.PowerApps.CLI."}
+        $pacPath = $pacNugetFolder.FullName + "\tools"
+        echo "##vso[task.setvariable variable=pacPath]$pacPath"
+
+        Write-Host "Pac Path - " 
+        $env:PATH = $env:PATH + ";" + $pacPath
+
+        pac solution create-settings --solution-zip $(Build.ArtifactStagingDirectory)\$(extsolutionname)_$(versionnumber).zip --settings-file deploymentsettings.json
+
+        Write-Host  "Pac File Generate Done :-"
+
+        $DeploymentSettingsFile= '.\deploymentsettings.json'
+        Write-Host "file variable added- $DeploymentSettingsFile "
+
+        $settingspath = "$(settingsRepopath)"
+
+        $DataverseConnectorId = "/providers/Microsoft.PowerApps/apis/shared_commondataserviceforapps"
+        $QADataverseConnectionID= "$(dmc-qa-dataverse-connection-reference)"
+        Write-Host  "File Path :- $settingspath"
+       
+        #-------------------QA------------------------
+        $json = Get-Content $DeploymentSettingsFile -raw | ConvertFrom-Json
+        Write-Host  "Existing Json :-"
+        Echo $json
+        $json.ConnectionReferences | % {if($_.ConnectorId -eq $DataverseConnectorId){$_.ConnectionId=$QADataverseConnectionID}}
+        $json | ConvertTo-Json -depth 32| set-content $DeploymentSettingsFile
+        Copy-Item '$(System.DefaultWorkingDirectory)\deploymentsettings.json' "$settingspath\qa"
+        MD $(Build.ArtifactStagingDirectory)\qa
+        Copy-Item '$(System.DefaultWorkingDirectory)\deploymentsettings.json' '$(Build.ArtifactStagingDirectory)\qa'
+        Write-Host  "Copied DEV"
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+    ArtifactName: '$(artifactname)'
+    publishLocation: Container

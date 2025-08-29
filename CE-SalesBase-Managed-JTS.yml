@@ -1,0 +1,90 @@
+name: "$(managed_releasenumber)$(Rev:r)"
+trigger: 
+- none
+pool:
+  vmimage: 'windows-latest'
+  name: 'IST-CE-DEV-QA'
+
+parameters:
+  - name: saveziptorepo
+    displayName: 'Save ZIP file to repo?'
+    type: string
+    values:
+      - true
+      - false
+    default: false
+
+variables:
+- name: srcenv
+  value: 'D365-Jts-Dev2'
+- name: PowerPlatformSPN
+- name: reponame
+  value: $(Build.Repository.Name)
+- name: repobranch
+  value: $(Build.SourceBranchName)
+- name: repopath
+  value: 'D365/CE/Solutions/SalesBase'
+- name: repopathpacked
+  value: 'D365/CE/Solutions/packed'
+- name: commitmessage
+  value: 'Sales_Base'
+- name: ismanaged
+  value: 'true'
+- name: solutionname
+  value: $(basesolutionname)
+- name: artifactname
+  value: $(solutionname)
+- name: publish
+- name: filepath
+  value: '$(System.DefaultWorkingDirectory)\$(artifactname)\$(solutionname)_$(versionnumber).zip'
+- group: OPGT 
+- group: jts
+stages:
+- stage: Build_Deploy
+  jobs:
+    - job: Basic_Tasks
+      condition: true
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+      - template: basictask.yml
+        parameters:
+         srcenv: $(srcenv)
+
+    - job: build_solution
+      condition: true
+      dependsOn: Basic_Tasks
+      condition: succeeded()
+      timeoutInMinutes: 60
+      steps:
+      - checkout: self
+        clean: true
+        persistCredentials: true
+
+      - ${{ if eq(parameters.saveziptorepo, true) }}: 
+          - template: powershell-clean.yml
+            parameters:
+              repobranch: $(repobranch)
+              repopath: $(repopathpacked)
+              solutionname: $(solutionname)
+      - template: solutionbuild.yml
+        parameters:
+          srcenv: $(srcenv)
+          ismanaged: '$(ismanaged)'
+          solutionname: '$(solutionname)'
+          artifactname: '$(artifactname)'
+
+      - ${{ if eq(parameters.saveziptorepo, true) }}: 
+        - task: CopyFiles@2
+          inputs:
+            SourceFolder: '$(Build.ArtifactStagingDirectory)'
+            Contents: '$(solutionname)_$(versionnumber).zip'
+            TargetFolder: '$(repopathpacked)'
+        - template: powershell-commit.yml
+          parameters:
+            reponame: $(Build.Repository.Name)
+            repobranch: $(repobranch)
+            repopath: $(repopathpacked)
+            commitmessage: '$(solutionname)-$(versionnumber)'
+ 
